@@ -1,13 +1,14 @@
 {
   "expo": {
-    "name": "siri-ai-spike",
+    "name": "Siri Spike",
     "slug": "siri-ai-spike",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.adamrowe.sirispike"
     },
     "android": {
       "adaptiveIcon": {
@@ -20,6 +21,17 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-app-intents",
+      "./plugins/withSiriAIPreview"
+    ],
+    "experiments": {
+      "inlineModules": {
+        "watchedDirectories": [
+          "app-intents"
+        ]
+      }
     }
   }
 }
