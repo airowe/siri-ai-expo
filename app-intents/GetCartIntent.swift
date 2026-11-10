@@ -1,7 +1,7 @@
 import AppIntents
 import Foundation
 
-/// Answers from a live API call, so nothing about the cart is indexed for Siri to answer from instead.
+/// Answers from a live, authenticated API call, so nothing about the cart is indexed for Siri to answer from instead.
 #if SIRI_AI_PREVIEW
 @AppIntent(.tool)
 #endif
@@ -11,11 +11,18 @@ struct GetCartIntent: AppIntent {
     "Tells the person what is in their shopping cart and what it costs."
   )
 
+  static let cartPath = "auth/carts/1"
+
   func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
     let answer: String
     do {
-      answer = describe(try await CartService.fetchCart())
+      let data = try await AuthService.authorizedGet(Self.cartPath)
+      answer = describe(try JSONDecoder().decode(Cart.self, from: data))
+    } catch AuthError.signedOut {
+      ToolOutcome.record("signed out")
+      answer = "Open Siri Spike to sign in again."
     } catch {
+      ToolOutcome.record("failed: \(error)")
       answer = "Couldn't reach the cart service."
     }
     return .result(value: answer, dialog: "\(answer)")
@@ -37,19 +44,4 @@ struct Cart: Decodable {
   let products: [Product]
   let total: Double
   let totalProducts: Int
-}
-
-enum CartService {
-  static let cartURL = URL(string: "https://dummyjson.com/carts/1")!
-  static let timeout: TimeInterval = 10
-
-  static func fetchCart() async throws -> Cart {
-    var request = URLRequest(url: cartURL)
-    request.timeoutInterval = timeout
-    let (data, response) = try await URLSession.shared.data(for: request)
-    guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-      throw URLError(.badServerResponse)
-    }
-    return try JSONDecoder().decode(Cart.self, from: data)
-  }
 }

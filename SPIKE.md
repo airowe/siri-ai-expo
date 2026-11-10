@@ -86,6 +86,34 @@ Findings:
 - The incomplete-run problem showed up again (run 1 of the control) even though Siri gave the full reply, so it looks like a problem in the evaluation harness rather than in Siri or the tool.
 - **By hand with the app closed: pass.** "In Siri Spike, what's in my cart?" got the correct cart without the app opening (exact reply not recorded). A Swift tool can make a live HTTPS call while the app isn't running.
 
+### Authenticated call with an expired token
+
+When the app opens, Swift logs in to DummyJSON's public demo account (`emilys`) with a **one-minute** access token and saves both tokens in the Keychain (`AfterFirstUnlockThisDeviceOnly`). `GetCartIntent` now calls the protected `/auth/carts/1`. On a 401 or 403 it refreshes once, saves the new tokens and retries. If that fails, it replies "Open Siri Spike to sign in again." The tool records what it did, and the app shows that on screen, so a test can tell a refresh from a token that was still valid. Real Expo apps sign in from JavaScript; reading a token that JavaScript saved is a later step.
+
+Each evaluation run signs in, waits 70 seconds, then asks "In Siri Spike, what's in my cart?"
+
+| Evaluation | Tool outcome recorded | Siri's reply | Result |
+|---|---|---|---|
+| Refresh on, 5 runs | "refreshed after 401", about 78 s after each sign-in | Full cart, 5 of 5 | 3 of 5 scored; runs 2 and 5 ended before their results arrived |
+| Refresh off (negative control), 5 runs | "signed out", about 80 s after each sign-in | "From Siri Spike: Open Siri Spike to sign in again.", 5 of 5 | Fail, as intended (response 0) |
+| Fresh token, no wait, 5 runs | not printed by this evaluation | Full cart, 5 of 5 | 2 of 5 scored; 3 ended before their results arrived |
+
+- **An expired token is refreshed inside a Siri tool call.** DummyJSON returns **401** for an expired access token, which the docs don't say. The refresh and retry fit inside Siri's wait.
+- **The negative control shows the check can fail:** with refresh off, every reply told the person to sign in again.
+- **The incomplete runs are in the evaluation harness, not in Siri or the tool.** In run 2 of the refresh evaluation, the tool recorded a refresh at 11:35:48 and Siri gave the full reply, yet the run was scored "ended before all of its results arrived". The rate was highest (3 of 5) while Siri was also hearing a person nearby.
+By hand (results reported as passing; exact replies not recorded):
+
+| Check | Pass means | Result |
+|---|---|---|
+| Fresh token | App shows "used saved token" | Pass |
+| Expired token, app closed | Cart read without opening the app; app shows "refreshed after 401" | Pass |
+| Signed out | "Open Siri Spike to sign in again." | Pass |
+| Phone locked, token expired | No fixed expectation; recording what happens | **Siri read the cart without asking to unlock** |
+
+- **A tool can use saved tokens while the phone is locked**, as long as the Keychain item is readable after the first unlock (`AfterFirstUnlockThisDeviceOnly`). A token stored with stricter protection (`WhenUnlocked`, which some secure-storage libraries use by default) would likely fail here. That's worth checking when Swift reads a token saved from JavaScript.
+
+- The first refresh run printed each outcome one run late, because the app read it only at launch. The app now re-reads it every second; the control run shows the fix working.
+
 - Connection: over Wi‑Fi, the run fails with "Lost pending connection to the test runner" if the phone locks. Set Auto-Lock to Never while testing.
 
 ### Spotlight on the simulator

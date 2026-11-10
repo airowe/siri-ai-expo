@@ -1,7 +1,16 @@
 import { StatusBar } from 'expo-status-bar';
 import * as AppIntents from 'expo-app-intents';
+import { requireNativeModule } from 'expo';
 import { useEffect, useState } from 'react';
 import { Button, StyleSheet, Text, View } from 'react-native';
+
+type AuthModule = {
+  signInAsync(): Promise<void>;
+  signOut(): void;
+  lastToolOutcome(): string;
+};
+
+const Auth = requireNativeModule<AuthModule>('AppIntentsSetup');
 
 const ORDERS: AppIntents.AppIntentEntity[] = [
   {
@@ -25,9 +34,28 @@ const ORDERS: AppIntents.AppIntentEntity[] = [
 ];
 
 const STEP_TIMEOUT_MS = 20_000;
+// Siri runs the tool while the app may stay active, so an app-state change can't be relied on.
+const OUTCOME_POLL_MS = 1_000;
 
 export default function App() {
   const [message, setMessage] = useState('Publishing orders…');
+  const [authMessage, setAuthMessage] = useState('Signing in…');
+  const [toolOutcome, setToolOutcome] = useState(Auth.lastToolOutcome());
+
+  const signIn = async () => {
+    setAuthMessage('Signing in…');
+    try {
+      await Auth.signInAsync();
+      setAuthMessage(`Signed in at ${new Date().toLocaleTimeString()}, token lasts 1 minute`);
+    } catch (error) {
+      setAuthMessage(`Sign-in FAILED: ${String(error)}`);
+    }
+  };
+
+  const signOut = () => {
+    Auth.signOut();
+    setAuthMessage('Signed out');
+  };
 
   const publish = async () => {
     const lines: string[] = [];
@@ -57,6 +85,9 @@ export default function App() {
 
   useEffect(() => {
     publish();
+    signIn();
+    const poll = setInterval(() => setToolOutcome(Auth.lastToolOutcome()), OUTCOME_POLL_MS);
+    return () => clearInterval(poll);
   }, []);
 
   return (
@@ -69,6 +100,10 @@ export default function App() {
         </Text>
       ))}
       <Button title="Publish again" onPress={publish} />
+      <Text testID="auth-status">{authMessage}</Text>
+      <Text testID="tool-outcome">Last cart tool call: {toolOutcome}</Text>
+      <Button title="Sign in again" onPress={signIn} />
+      <Button title="Sign out" onPress={signOut} />
       <StatusBar style="auto" />
     </View>
   );

@@ -12,5 +12,17 @@ final class AppIntentsSetup: Module {
         AppEntityIdentifierRegistry.shared.registerIndexed("order", as: OrderEntity.self)
       }
     }
+
+    AsyncFunction("signInAsync") { () async throws in
+      try await AuthService.signIn()
+    }
+
+    Function("signOut") {
+      AuthService.signOut()
+    }
+
+    Function("lastToolOutcome") { () -> String in
+      ToolOutcome.last
+    }
   }
 }
