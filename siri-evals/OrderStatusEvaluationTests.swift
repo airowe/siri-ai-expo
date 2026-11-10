@@ -8,6 +8,9 @@ private let appBundleIdentifier = "com.adamrowe.sirispike"
 private let definitions = IntentDefinitions(bundleIdentifier: appBundleIdentifier)
 private let getOrderStatusIntent = definitions.intents["GetOrderStatusIntent"]
 private let searchOrdersIntent = definitions.intents["SearchOrdersIntent"]
+private let getCartIntent = definitions.intents["GetCartIntent"]
+/// A product in DummyJSON's fixed cart 1. Nothing about the cart is indexed, so naming it proves the API was called.
+private let productOnlyTheAPIKnows = "motorcycle"
 private let publishTimeout: TimeInterval = 90
 private let reliabilityRuns = 5
 
@@ -133,4 +136,29 @@ func searchesOrdersByKeyword() async throws {
 func ignoresToolsWhenAppIsNotNamed() async throws {
   let result = EvaluationContext.current.result
   #expect(result.aggregateValue(.mean(of: .intentsAllPass)) == 1)
+}
+
+private func cartScenario() -> SiriScenario {
+  SiriScenario {
+    UserTurn("In Siri Spike, what's in my cart?") {
+      Calls {
+        getCartIntent
+      }
+      SiriResponse(.contains(productOnlyTheAPIKnows, caseSensitive: false))
+    }
+  }
+}
+
+@Test(
+  .evaluates(OrderStatusEvaluation(
+    name: "Cart contents from the demo API, repeated",
+    dataset: SiriScenarioLoader {
+      (0..<reliabilityRuns).map { _ in cartScenario() }
+    }
+  ))
+)
+func callsCartToolEveryTime() async throws {
+  let result = EvaluationContext.current.result
+  #expect(result.aggregateValue(.mean(of: .intentsAllPass)) == 1)
+  #expect(result.aggregateValue(.mean(of: .siriResponseAllPass)) == 1)
 }

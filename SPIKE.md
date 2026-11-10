@@ -73,6 +73,19 @@ Findings:
 - **3 of 8 runs ended before all their results arrived.** The evaluation scores those as failures, so the suite fails even when Siri behaved correctly. The cause isn't known yet. It may be the first request after a fresh install, or a timeout in the evaluation.
 - Item names are still indexed, so Siri can still list orders without the app being named. That's by design for entity search, but it means indexed titles shouldn't contain anything private.
 
+### Tool that calls a demo API
+
+`GetCartIntent` fetches `https://dummyjson.com/carts/1` with `URLSession` (10-second timeout) and reads the cart back. If the request fails, it says "Couldn't reach the cart service." rather than throwing. Nothing about the cart is indexed, so a reply that names its products can only come from the API. The order tools are unchanged.
+
+| Run | Expected reply | Tool called | Siri's reply | Result |
+|---|---|---|---|---|
+| 5 times | contains "motorcycle" | `GetCartIntent`: **5 of 5** | "From Siri Spike: Your cart has 4 products, $13,037.88: Blue Frock, Generic Motorcycle, iPhone 6, Baseball Ball." each time | **Pass** (intents 1, response 1) |
+| 5 times, negative control | contains "laptop" (wrong on purpose) | 4 of 5; run 1 ended before its results arrived | Same reply each time | Fail, as intended (intents 0.8, response 0) |
+
+- **Siri calls a live API tool every time when there is no indexed data to answer from.** That fits the identity-only indexing rule above.
+- The incomplete-run problem showed up again (run 1 of the control) even though Siri gave the full reply, so it looks like a problem in the evaluation harness rather than in Siri or the tool.
+- **By hand with the app closed: pass.** "In Siri Spike, what's in my cart?" got the correct cart without the app opening (exact reply not recorded). A Swift tool can make a live HTTPS call while the app isn't running.
+
 - Connection: over Wi‑Fi, the run fails with "Lost pending connection to the test runner" if the phone locks. Set Auto-Lock to Never while testing.
 
 ### Spotlight on the simulator
