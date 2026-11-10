@@ -4,7 +4,7 @@ import SiriEvaluations
 import Testing
 import XCTest
 
-private let appBundleIdentifier = "com.adamrowe.sirispike"
+private let appBundleIdentifier = "com.example.sirispike"
 private let definitions = IntentDefinitions(bundleIdentifier: appBundleIdentifier)
 private let getOrderStatusIntent = definitions.intents["GetOrderStatusIntent"]
 private let searchOrdersIntent = definitions.intents["SearchOrdersIntent"]

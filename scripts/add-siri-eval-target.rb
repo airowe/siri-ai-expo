@@ -24,7 +24,7 @@ tests.build_configurations.each do |config|
   settings = config.build_settings
   settings['PRODUCT_NAME'] = '$(TARGET_NAME)'
   settings['TEST_TARGET_NAME'] = APP_TARGET
-  settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.adamrowe.sirispike.SiriEvals'
+  settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.example.sirispike.SiriEvals'
   settings['SWIFT_VERSION'] = '6.0'
   settings['GENERATE_INFOPLIST_FILE'] = 'YES'
   settings['CODE_SIGN_STYLE'] = 'Automatic'

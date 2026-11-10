@@ -84,7 +84,7 @@ enum AuthService {
 
 /// Readable after the first unlock, so a tool can use it while the phone is locked.
 enum TokenStore {
-  private static let service = "com.adamrowe.sirispike.auth"
+  private static let service = "com.example.sirispike.auth"
   private static let account = "tokens"
 
   private static var baseQuery: [String: Any] {

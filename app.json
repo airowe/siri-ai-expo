@@ -8,7 +8,7 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.adamrowe.sirispike"
+      "bundleIdentifier": "com.example.sirispike"
     },
     "android": {
       "adaptiveIcon": {
