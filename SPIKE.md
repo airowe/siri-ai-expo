@@ -134,7 +134,7 @@ Try each request by voice or typed to Siri. Record what happens, including the e
 | 1 | Build | n/a | Build with the flag on | Compiles, and `SearchOrdersIntent` is in the metadata | |
 | 2 | Spotlight index | n/a | Search for "trail running shoes" in Spotlight on the iPhone | The order appears, and Publish and Spotlight don't time out | |
 | 2a | Tool, foreground | Open | "Where are my trail running shoes?" | Says out for delivery, today by 6 PM | |
-| 3 | Tool, background | Closed | "In Siri Spike, where is my desk lamp?" | Says shipped, on Friday, without opening the app | |
+| 3 | Tool, background | Closed | "In Siri Spike, where is my desk lamp?" | Says shipped, on Friday, without opening the app | **Pass** (by hand, after the identity-only entity change; exact reply not recorded). Milestone 1 met |
 | 4 | Entity search | Closed | "What coffee did I order in Siri Spike?" | Finds Ethiopian coffee beans | |
 | 5 | Generable entity | Open | "Search my orders for shoes" | Calls Search Orders with keyword "shoes" | |
 | 6 | Skill | Open | "Is my delivery coming?" | Asks which order, rather than guessing | |
