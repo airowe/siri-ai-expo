@@ -2,6 +2,8 @@ import AppIntents
 internal import ExpoAppIntents
 import Foundation
 
+/// Identifies an order. Status and arrival are deliberately not stored here, so Siri can only
+/// learn them by calling `GetOrderStatusIntent`, as it would for data behind a live API.
 struct OrderEntity: AppEntity {
   static let typeDisplayRepresentation: TypeDisplayRepresentation = "Order"
   static let defaultQuery = OrderQuery()
@@ -12,39 +14,25 @@ struct OrderEntity: AppEntity {
   #if SIRI_AI_PREVIEW
   @Property(title: "Item", description: "What the person ordered, such as running shoes.")
   var item: String
-
-  @Property(title: "Status", description: "Where the order is now: preparing, shipped, out for delivery, or delivered.")
-  var status: String
-
-  @Property(title: "Arrival", description: "When the order is expected to arrive, in plain language.")
-  var arrival: String
   #else
   @Property(title: "Item")
   var item: String
-
-  @Property(title: "Status")
-  var status: String
-
-  @Property(title: "Arrival")
-  var arrival: String
   #endif
 
   var synonyms: [String]
 
   var displayRepresentation: DisplayRepresentation {
-    DisplayRepresentation(title: "\(item)", subtitle: "\(status), \(arrival)")
+    DisplayRepresentation(title: "\(item)")
   }
 
   init(record: AppIntentEntityRecord) {
     self.id = record.id
     self.synonyms = record.synonyms
     self.item = record.title
-    self.status = record.metadata["status"] ?? "unknown"
-    self.arrival = record.metadata["arrival"] ?? "unknown"
   }
 
   func matches(_ searchText: String) -> Bool {
     let needle = searchText.lowercased()
-    return ([item, status] + synonyms).contains { $0.lowercased().contains(needle) }
+    return ([item] + synonyms).contains { $0.lowercased().contains(needle) }
   }
 }

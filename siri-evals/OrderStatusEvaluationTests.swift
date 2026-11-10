@@ -7,7 +7,9 @@ import XCTest
 private let appBundleIdentifier = "com.adamrowe.sirispike"
 private let definitions = IntentDefinitions(bundleIdentifier: appBundleIdentifier)
 private let getOrderStatusIntent = definitions.intents["GetOrderStatusIntent"]
+private let searchOrdersIntent = definitions.intents["SearchOrdersIntent"]
 private let publishTimeout: TimeInterval = 90
+private let reliabilityRuns = 5
 
 /// Launches the app so it publishes its orders, then runs each scenario through Siri.
 struct OrderStatusEvaluation: Evaluation {
@@ -62,6 +64,73 @@ private enum PublishError: Error {
   ))
 )
 func answersTrailRunningShoesStatus() async throws {
+  let result = EvaluationContext.current.result
+  #expect(result.aggregateValue(.mean(of: .intentsAllPass)) == 1)
+  #expect(result.aggregateValue(.mean(of: .siriResponseAllPass)) == 1)
+}
+
+private func trailRunningShoesScenario() -> SiriScenario {
+  SiriScenario {
+    UserTurn("In Siri Spike, where are my trail running shoes?") {
+      Calls {
+        getOrderStatusIntent
+      }
+      SiriResponse(.contains("out for delivery", caseSensitive: false))
+    }
+  }
+}
+
+@Test(
+  .evaluates(OrderStatusEvaluation(
+    name: "Trail running shoes status, repeated",
+    dataset: SiriScenarioLoader {
+      (0..<reliabilityRuns).map { _ in trailRunningShoesScenario() }
+    }
+  ))
+)
+func callsOrderStatusToolEveryTime() async throws {
+  let result = EvaluationContext.current.result
+  #expect(result.aggregateValue(.mean(of: .intentsAllPass)) == 1)
+  #expect(result.aggregateValue(.mean(of: .siriResponseAllPass)) == 1)
+}
+
+@Test(
+  .evaluates(OrderStatusEvaluation(
+    name: "Search orders for shoes, app open",
+    dataset: SiriScenarioLoader {
+      SiriScenario {
+        UserTurn("Search my Siri Spike orders for shoes") {
+          Calls {
+            searchOrdersIntent
+          }
+          SiriResponse(.contains("trail running shoes", caseSensitive: false))
+        }
+      }
+    }
+  ))
+)
+func searchesOrdersByKeyword() async throws {
+  let result = EvaluationContext.current.result
+  #expect(result.aggregateValue(.mean(of: .intentsAllPass)) == 1)
+  #expect(result.aggregateValue(.mean(of: .siriResponseAllPass)) == 1)
+}
+
+@Test(
+  .evaluates(OrderStatusEvaluation(
+    name: "Package question without the app name",
+    dataset: SiriScenarioLoader {
+      SiriScenario {
+        UserTurn("Where's my package?") {
+          Calls(.disallowed) {
+            getOrderStatusIntent
+            searchOrdersIntent
+          }
+        }
+      }
+    }
+  ))
+)
+func ignoresToolsWhenAppIsNotNamed() async throws {
   let result = EvaluationContext.current.result
   #expect(result.aggregateValue(.mean(of: .intentsAllPass)) == 1)
 }

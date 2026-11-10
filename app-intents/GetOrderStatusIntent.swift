@@ -1,4 +1,5 @@
 import AppIntents
+internal import ExpoAppIntents
 
 /// Read-only, answered from Swift so it needs no JavaScript. The attribute is conditional so the
 /// same declaration builds on SDKs without the tool trait, which also shows whether a tool can stay
@@ -16,7 +17,10 @@ struct GetOrderStatusIntent: AppIntent {
   var order: OrderEntity
 
   func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
-    let answer = "\(order.item) is \(order.status), arriving \(order.arrival)."
+    let record = try await AppIntentEntityStore.shared.entities(ofKind: "order", matching: [order.id]).first
+    let status = record?.metadata["status"] ?? "unknown"
+    let arrival = record?.metadata["arrival"] ?? "unknown"
+    let answer = "\(order.item) is \(status), arriving \(arrival)."
     return .result(value: answer, dialog: "\(answer)")
   }
 }

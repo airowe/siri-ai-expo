@@ -11,7 +11,6 @@ extension OrderEntity: IndexedEntity {
     let attributes = defaultAttributeSet
     attributes.displayName = item
     attributes.title = item
-    attributes.contentDescription = "\(status), \(arrival)"
     attributes.keywords = ["order", "delivery", item] + synonyms
     return attributes
   }

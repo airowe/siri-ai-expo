@@ -26,6 +26,55 @@ Does `expo-app-intents` 0.5.16 (Expo SDK 58) work with the Siri AI Developer Pre
 
 `SearchOrdersIntent` needed one fix: a computed `displayRepresentation` must return `DisplayRepresentation(title:)`, not a string literal.
 
+## Results on a device (iPhone 16 Pro, iOS 27.3 beta 24C5037i, Siri beta on)
+
+Built and tested over Wi‑Fi with `xcodebuild`, Release configuration, `DEVELOPMENT_TEAM` and `IPHONEOS_DEPLOYMENT_TARGET=27.3` passed on the command line.
+
+| Run | Expected reply | Tool called | Siri's reply | Result |
+|---|---|---|---|---|
+| 1 | contains "out for delivery" | `GetOrderStatusIntent`: yes | "From Siri Spike: Trail running shoes is out for delivery, arriving today by 6 PM." | **Pass** (intents 1/1, response 1/1) |
+| 2, negative control | contains "shipped" (wrong on purpose) | `GetOrderStatusIntent`: **no** | "Your trail running shoes are out for delivery and scheduled to arrive today by 6:00 PM." | Fail, as intended (intents 0/1, response 0/1) |
+
+- Run 1 is check 2a. The reply is the tool's dialog, so Siri ran our Swift code. The evaluation's diagnostics show 3 `OrderEntity` items in the Spotlight index, so check 2 passes on device too.
+- Run 2 gave the right facts **without calling the tool**. Siri likely answered from the indexed entity data. Whether Siri calls the tool varies from run to run, so a single passing run doesn't prove the tool is reliable.
+- The test now asserts `siriResponseAllPass` as well as `intentsAllPass`, so each failure says which part went wrong.
+
+| Run | Expected reply | Tool called | Siri's reply | Result |
+|---|---|---|---|---|
+| 3 | contains "out for delivery" | **no** | "Your trail running shoes are out for delivery and scheduled to arrive today by 6 PM." | Fail on intents only; response passed |
+| 4, negative control | contains "shipped" | no | (same facts) | Fail on intents and on response |
+
+### Full evaluation suite (4 evaluations, 8 Siri requests, about 4 minutes)
+
+| Evaluation | Check | Tool calls | Reply | Result |
+|---|---|---|---|---|
+| Trail running shoes, once | 2a | `GetOrderStatusIntent`: yes | "From Siri Spike: Trail running shoes is out for delivery, arriving today by 6 PM." | Pass |
+| Trail running shoes, 5 times | 2a | Called in 1 of 5. One run ended before its results arrived | All 5 had the right facts. Only the run that called the tool began "From Siri Spike" | Fail: intents 0.2, response 0.8 (the incomplete run counts as a fail) |
+| "Search my Siri Spike orders for shoes" | 5 | `SearchOrdersIntent`: yes | "I found one order for trail running shoes, which is out for delivery and expected today by 6 PM" | Pass |
+| "Where's my package?" | 7 | Neither tool called | "Which package? The trail running shoes, the brass desk lamp, or the Ethiopian coffee beans?" | Pass |
+
+Findings:
+
+- **The status tool is called in about 3 of 8 runs** (all runs of the status question with the correct expected reply, on this device). The other replies have the same facts in Siri's own words. Those facts can only have come from the indexed `OrderEntity` data, so Siri is answering from the Spotlight index instead of running the tool. For an app whose answers must be live (an API call, an expired token), that would be wrong. Unknowns: whether Siri does this with the app closed, and whether indexing fewer properties would push Siri to call the tool.
+- **The search tool and the generable `OrderSearch` entity work.** Siri called `SearchOrdersIntent` with a keyword and summarized the returned entities. The evaluation didn't check the keyword's value.
+- **The control passed but leaked app data.** Without the app being named, Siri didn't call a tool, but it listed all three orders by name. The data came from the Spotlight index, so the rule "don't call tools unless the app is named" doesn't stop Siri from using indexed data.
+### Status and arrival removed from the entity and the index
+
+`OrderEntity` now holds only `id`, `item` and `synonyms`. Status and arrival are no longer entity properties, in the display subtitle, or in the Spotlight `contentDescription`. `GetOrderStatusIntent` reads them from the entity store when it runs, the way a live API call would.
+
+| Evaluation | Completed runs | Tool called | Reply |
+|---|---|---|---|
+| Status, once | 0 of 1 (ended before results arrived) | n/a | none |
+| Status, 5 times | 4 of 5 | **4 of 4** | "From Siri Spike: Trail running shoes is out for delivery, arriving today by 6 PM." each time |
+| Search for shoes | 0 of 1 (ended before results arrived) | n/a | "I found one order for trail running shoes" |
+| "Where's my package?" | 1 of 1 | Neither, as required | Still lists the three orders by item name |
+
+- **Indexing only identity makes Siri call the tool.** Of the status runs that completed, Siri called the tool in 4 of 4, against 3 of 8 when status and arrival were indexed. Rule for the tool and its guide: index what identifies a record, never the data the tool exists to answer.
+- **3 of 8 runs ended before all their results arrived.** The evaluation scores those as failures, so the suite fails even when Siri behaved correctly. The cause isn't known yet. It may be the first request after a fresh install, or a timeout in the evaluation.
+- Item names are still indexed, so Siri can still list orders without the app being named. That's by design for entity search, but it means indexed titles shouldn't contain anything private.
+
+- Connection: over Wi‑Fi, the run fails with "Lost pending connection to the test runner" if the phone locks. Set Auto-Lock to Never while testing.
+
 ### Spotlight on the simulator
 
 On a clean install, `setEntityCatalogAsync` and `reindexEntitiesAsync` both failed to return within 20 seconds. The system log shows Core Spotlight failing with `CSIndexErrorDomain -1000`, because its connection to `com.apple.SetStoreUpdateService` was invalidated. The package's stale-index flag stayed `true`. One rerun with the orders already stored reported `ok` for every step, so `ok` alone doesn't prove the index was written.
@@ -104,6 +153,5 @@ To run it on an iPhone, turn on Developer Mode, then Settings > Developer > Enab
 ## Not covered
 
 - JavaScript background tasks: `runBackgroundTask` isn't in 0.5.16, so this app answers from Swift.
-- Running the Siri evaluation, which needs a device or a Mac on a 27.3 beta.
-- Checks 3–7 as evaluations. Check 3 needs the app closed, and the evaluation launches it.
+- Checks 3, 4 and 6 as evaluations. Checks 5 and 7 are automated. Check 3 needs the app closed, and the evaluation launches it.
 - Automating the skills bundle: that's the next milestone, once check 6 passes.
