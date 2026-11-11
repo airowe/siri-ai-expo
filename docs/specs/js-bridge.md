@@ -1,7 +1,7 @@
 # SiriAIKit JavaScript bridge: design
 
 **Date:** Nov 11, 2026
-**Status:** Design. Nothing is built. Blocked on Expo releasing `runBackgroundTask`, on whether JavaScript starts at all when Siri launches the app (likely not, see [Will JavaScript start at all?](#will-javascript-start-at-all)), and on the cold-start measurement below.
+**Status:** Design. Nothing is built. Blocked on Expo releasing `runBackgroundTask`, and on the cold-start measurement on the iPhone below. JavaScript does start on a cold launch ([checked on the Simulator](#will-javascript-start-at-all)).
 **Inputs:** [the Expo layer spike](https://github.com/airowe/siri-ai-expo/blob/spike/expo-layer/docs/spikes/expo-layer.md) (`spike/expo-layer`: `patches/`, `app-intents/GetPackingTipIntent.swift`, `siriTasks.ts`), SiriAIKit 0.2.0's `SiriTool.swift`, `ToolFailure.swift` and `ToolOutcomeLog.swift`.
 
 ## Goal
@@ -20,9 +20,9 @@ The tool's declaration stays in Swift. Siri needs a Swift `AppIntent` with `@App
 |---|---|
 | Can it work? | Yes. The spike's `GetPackingTipIntent` passed 3 of 3 Siri evaluations on a device, with Expo's `runBackgroundTask` backported. |
 | Is it usable? | Unknown. Those runs were all **warm**: the evaluation launches the app before each run. Nobody has measured a cold start inside Siri's wait. |
-| Will JavaScript even start on a cold launch? | **Probably not, as Expo stands.** In SDK 58 (and on Expo's `main`), React Native starts only when a window scene connects, and a background launch for an intent most likely connects none. The queued task would then wait until the runner times out. Testable on the Simulator, without the iPhone. |
+| Will JavaScript even start on a cold launch? | **Yes** (Simulator, `AppIntentsTesting`, 3 of 3). iOS connects a background scene, so React Native starts. Cold: ~1.7 s before `perform()`, then 0.2–0.3 s to the JS reply. Warm: 1–10 ms. Device timing is still unmeasured. |
 | Has Expo shipped it? | No. It's on Expo's `main` (since Oct 27), but not on `sdk-58` and not in any npm release (checked below). |
-| What would we ship? | A Swift method on `SiriTool` and a JavaScript `defineSiriTool` in `expo-siri-ai-kit`. No new plugin option: JS-answered tools become one more kind of declaration in #8's `tools` option. No native module, unless Expo leaves the cold-launch gap open (then a small plugin-added start-up hook, below). |
+| What would we ship? | A Swift method on `SiriTool` and a JavaScript `defineSiriTool` in `expo-siri-ai-kit`. No new plugin option: JS-answered tools become one more kind of declaration in #8's `tools` option. No native module. |
 | What ships now? | Nothing. Measure cold start first. |
 
 ## Where Expo is (checked Nov 11, 2026)
@@ -210,28 +210,40 @@ signed out (token rejected) at 14:03:40
 
 | App state when Siri calls | What happens before JS can answer | Spike evidence |
 |---|---|---|
-| **Foreground**, JS running | The runner emits an event; the executor runs on the JS thread. Milliseconds. | 3 of 3 passed |
+| **Foreground**, JS running | The runner emits an event; the executor runs on the JS thread. Milliseconds. | 3 of 3 passed on the iPhone; 1–10 ms on the Simulator |
 | **Suspended**, process alive | iOS resumes the process for the intent; the JS thread resumes, then runs the task (after any timers or work queued while suspended). | None |
-| **Cold**, no process | iOS launches the app in the background. Native start, Expo modules, the React Native host, Hermes loads the bundle and evaluates the entry file (its whole import graph, including `App` and the code that runs on launch), `defineSiriTool` registers, then the task runs. All of it counts against `SiriTool.timeout`, because the runner's clock starts when Swift calls it. | None |
+| **Cold**, no process | iOS launches the app in the background. Native start, Expo modules, the React Native host, Hermes loads the bundle and evaluates the entry file (its whole import graph, including `App` and the code that runs on launch), `defineSiriTool` registers, then the task runs. All of it counts against `SiriTool.timeout`, because the runner's clock starts when Swift calls it. | Simulator, without Siri: 3 of 3 answered ([below](#will-javascript-start-at-all)) |
 
 ### Will JavaScript start at all?
 
-Read from the code (expo-task-manager 58.0.14 with the backport, `expo` 58, the spike's generated `ios/`), not yet observed:
+**Yes. Checked on the Simulator on Nov 11, 2026.** A cold launch for an intent starts React Native, and the JavaScript task answers.
 
-1. `runBackgroundTask` calls `EXTaskRunner`, which calls `EXTaskService.executeTask`.
-2. If no JavaScript task manager has registered yet, `executeTask` queues the event and calls `_loadAppWithId`. That asks `UMAppLoaderProvider` for a `"react-native-experience"` loader. **Nothing in a standalone app registers one**: the string appears only in `EXTaskService.m`, in the spike's `node_modules` and on Expo's `main`. It's a leftover of Expo Go. So the event just waits in the queue.
-3. The queue is flushed when `TaskManagerModule` is created and JavaScript starts listening, which happens only once React Native is running.
-4. The spike's `AppDelegate` doesn't start React Native. Since the iOS 27 SDK requires the scene life cycle, `ExpoAppSceneDelegate.scene(_:willConnectTo:options:)` starts it, into the scene's window. That's the only call to `startReactNative` (same on Expo's `main`).
-5. UIKit doesn't connect a scene for a background launch. **If running an intent without UI follows that rule, no scene connects, React Native never starts, and the run ends with Expo's "did not finish within N seconds" error.** SiriTool would record `failed (JS task error: …)` or, with the grace rule, `timed out`.
+Why this needed checking: in SDK 58 (and on Expo's `main`), React Native starts only in `ExpoAppSceneDelegate.scene(_:willConnectTo:options:)`, and expo-task-manager's fallback for starting JavaScript asks for a `"react-native-experience"` app loader that nothing registers in a standalone app. If a background launch connected no scene, the task would wait in `EXTaskService`'s queue until the runner timed out. It does connect one.
 
-This would also explain why the spike passed: its evaluation launches the app (connecting a scene) before every run.
+**How it was run:** a copy of the spike app (`spike/expo-layer` with the backport patches), with the [instrumentation](#instrumentation) below plus two more notes: `scenes` (`UIApplication.shared.connectedScenes.count` in `perform()`) and `appState` (`applicationState`, 0 active, 2 background). `GetPackingTipIntent` returned the outcome with its answer. A UI test target ran it through `AppIntentsTesting` (`IntentDefinitions(...).intents["GetPackingTipIntent"].makeIntent().run()`), on a new iPhone 18 Pro Simulator, iOS 27.3 (24C5037i), Xcode 27.3 beta, Release build. Cold runs called `launch()`, `terminate()`, waited 3 s, then ran the intent (XCUIApplication state before: 1, not running). Warm runs launched the app once and ran the intent three times.
 
-If that holds, the bridge needs one more piece: **start React Native without a window when the process launched without a scene**, so that a background task can run. Where it belongs, in order of preference:
+| Run | `scenes` | `appState` | `proc` | `boot` | `task` | `reply` | Test's wall time |
+|---|---|---|---|---|---|---|---|
+| cold 1 | 1 | 2 (background) | 1783 ms | +11 ms | 157 ms | 170 ms | 2878 ms |
+| cold 2 | 1 | 2 (background) | 1587 ms | +197 ms | 320 ms | 327 ms | 2044 ms |
+| cold 3 | 1 | 2 (background) | 1644 ms | +103 ms | 229 ms | 236 ms | 2005 ms |
+| warm 1 | 1 | 0 (active) | 7739 ms | −5253 ms | 2 ms | 10 ms | 162 ms |
+| warm 2 | 1 | 0 (active) | 7790 ms | −5304 ms | 0 ms | 1 ms | 13 ms |
+| warm 3 | 1 | 0 (active) | 7803 ms | −5317 ms | 0 ms | 1 ms | 13 ms |
 
-1. **In Expo**, alongside `runBackgroundTask`, which already promises a JS answer "without opening the app". Report it upstream once the Simulator test below confirms it, not before.
-2. **In `expo-siri-ai-kit`**, as a small config-plugin mod on the generated `AppDelegate`: when an intent needs JavaScript and no scene has connected, call the React Native factory's headless start. This is native code we'd own and keep in step with Expo's template each SDK, so only as a stopgap.
+What it shows:
 
-**Settle this first, on the Simulator.** The Simulator spike ([airowe/siri-ai-kit#7](https://github.com/airowe/siri-ai-kit/pull/7)) found that Siri itself doesn't run there, but `AppIntentsTesting` does run an app's intent. So: build the patched spike app for the Simulator, terminate it, run `GetPackingTipIntent` through `AppIntentsTesting`, and see whether it returns the JavaScript tip or Expo's timeout. Then repeat with the app in the foreground as a control, which must return the tip. This needs no iPhone and answers the yes/no; the timings still need the device.
+- **A background scene connects on a cold intent launch.** `scenes=1` with the app in the background (and in the background afterwards, XCUIApplication state 3). So `ExpoAppSceneDelegate` starts React Native, and no extra native start-up code is needed.
+- **Every cold run was really cold.** `boot` is positive: JavaScript evaluated the entry file after `perform()` was called. Warm runs have JS running 5 s before.
+- **Most of the cold cost comes before `perform()`.** About 1.6–1.8 s passes between the process starting and `perform()` (`proc`), then 0.2–0.3 s to the JavaScript reply. The test's wall time, 2–2.9 s, covers both. Whatever Siri sees includes the whole thing.
+- **Warm is free:** 1–10 ms.
+
+What it doesn't show:
+
+- **Device timing.** A Mac's Simulator is faster than a phone. The [measurement on the iPhone](#cold-start-measurement) is still needed for the decision.
+- **That Siri launches the app the same way.** `AppIntentsTesting` runs the intent without Siri. Siri on the Simulator doesn't work ([airowe/siri-ai-kit#7](https://github.com/airowe/siri-ai-kit/pull/7)). The device measurement's `scenes` and `boot` notes will show whether Siri's launch matches.
+
+Earlier drafts of this spec predicted, from reading the code, that no scene would connect and JavaScript would never start. That was wrong, which is why it was checked before reporting anything to Expo.
 
 Things that follow:
 
@@ -267,7 +279,7 @@ Phased, so nothing ships that only works with patched Expo.
 
 **Not shipped, and why:**
 
-- **A native module.** The bridge already exists (`runBackgroundTask`). The Swift side has to live in the app target anyway, because that's where the tool's `AppIntent` is. The one exception is the cold-launch gap: if Expo doesn't start React Native without a scene, a plugin mod on `AppDelegate` would (see [Will JavaScript start at all?](#will-javascript-start-at-all)). That's still a mod, not a module.
+- **A native module.** The bridge already exists (`runBackgroundTask`). The Swift side has to live in the app target anyway, because that's where the tool's `AppIntent` is. A cold launch connects a background scene, so Expo's own start-up runs React Native and no start-up code of ours is needed ([checked](#will-javascript-start-at-all)).
 - **A separate plugin option** (for example `javascriptTools: true`). There's nothing extra to configure natively, and Expo's own error already says to install `expo-task-manager`. Generated JS-answered tools go through the existing `tools` option instead (next section).
 
 ### Generated tools
@@ -311,7 +323,7 @@ TDD, as for the rest of SiriAIKit.
 
 ## Cold-start measurement
 
-**Run this before building anything above, and after the Simulator check in [Will JavaScript start at all?](#will-javascript-start-at-all).** If that check shows JavaScript doesn't start on a cold launch, the cold runs here will all time out and only say so again; fix or work around the start-up gap first. It answers:
+**Run this before building anything above.** The [Simulator check](#will-javascript-start-at-all) showed JavaScript starts on a cold launch and how the time splits; this measures it on the phone, through Siri. Add the Simulator check's `scenes` and `appState` notes to the instrumentation, to confirm Siri's launch looks the same. It answers:
 
 1. How long from `perform()` to the JavaScript reply, warm and cold?
 2. Do cold runs pass the Siri evaluation inside a 10-second `SiriTool`?
@@ -636,5 +648,5 @@ gh api 'repos/expo/expo/contents/packages/expo-app-intents/ios/AppIntentBackgrou
 ## Open questions
 
 - **How long Siri waits for a tool.** `SiriTool`'s 10 seconds is our choice, not Apple's limit. The measurement only answers this if a cold run passes 10 seconds.
-- **Whether running an intent connects a scene.** The cold-launch analysis assumes it doesn't. The Simulator check settles it. If a scene does connect, React Native starts and mounts `App`, and the app's launch work competes with the tool; the `task − boot` gap will show how much.
+- **How much the app's own launch work costs a cold run.** A background scene connects, so React Native mounts `App`, and its launch work (Spotlight publishing and sign-in in the spike) shares the JS thread with the tool. On the Simulator `task − boot` was 120–150 ms. The device numbers will show whether apps need a "launched for Siri" check.
 - **The first SDK with `runBackgroundTask`**, and whether its API matches the backport. The bridge's Swift side depends only on the closure shape, so a renamed method changes the app's glue line, not SiriAIKit.
